@@ -23,24 +23,42 @@ app.get("/webhook", (req, res) => {
 });
 
 app.post("/webhook", async (req, res) => {
-  const data = await xml2js.parseStringPromise(req.body);
-  const entry = data.feed.entry?.[0];
-  if (!entry) return res.sendStatus(200);
+  try {
+    const data = await xml2js.parseStringPromise(req.body);
+    const entry = data.feed.entry?.[0];
+    if (!entry) return res.sendStatus(200);
 
-  const videoId = entry["yt:videoId"][0];
-  const title = entry.title[0];
+    const videoId = entry["yt:videoId"][0];
+    const title = entry.title[0];
+    const channelId = entry["yt:channelId"][0];
 
-  const channel = await client.channels.fetch(process.env.CHANNEL_ID);
+    const streamer = streamers.find(s => s.channelId === channelId);
+    if (!streamer) return res.sendStatus(200);
 
-  await channel.send({
-    content: `📡 Webhook: Video mới!`,
-    embeds: [{
-      title,
-      url: `https://youtube.com/watch?v=${videoId}`
-    }]
-  });
+    const url = `https://youtube.com/watch?v=${videoId}`;
+    const thumbnail = `https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg`;
 
-  res.sendStatus(200);
+    const channel = await client.channels.fetch(process.env.CHANNEL_ID);
+
+    await channel.send({
+      content: `🎬 ${streamer.name} vừa ra video mới!`,
+      embeds: [
+        {
+          title: title,
+          url: url,
+          color: 3447003,
+          image: { url: thumbnail },
+          author: { name: streamer.name },
+          footer: { text: "NEW VIDEO" }
+        }
+      ]
+    });
+
+    res.sendStatus(200);
+  } catch (err) {
+    console.log("Webhook error:", err.message);
+    res.sendStatus(500);
+  }
 });
 
 async function subscribeAll(){
