@@ -1,4 +1,11 @@
 require("dotenv").config();
+const fs = require("fs");
+
+const express = require("express");
+const axios = require("axios");
+const cron = require("node-cron");
+const { Client, GatewayIntentBits } = require("discord.js");
+const xml2js = require("xml2js");
 
 let streamers = [];
 
@@ -10,23 +17,19 @@ function loadStreamers() {
   } catch (err) {
     console.log("Load streamer error:", err.message);
   }
-};
-
-const express = require("express");
-const axios = require("axios");
-const cron = require("node-cron");
-const { Client, GatewayIntentBits } = require("discord.js");
-const fs = require("fs");
-const xml2js = require("xml2js");
-
+}
 
 const API_KEYS = (process.env.YOUTUBE_API_KEYS || "").split(",");
-function getKey(i){ return API_KEYS[i % API_KEYS.length]; }
+function getKey(i) {
+  return API_KEYS[i % API_KEYS.length];
+}
 
 const app = express();
 app.use(express.text({ type: "*/*" }));
 
-const client = new Client({ intents: [GatewayIntentBits.Guilds] });
+const client = new Client({
+  intents: [GatewayIntentBits.Guilds]
+});
 
 let lastVideo = {};
 
@@ -73,28 +76,33 @@ app.post("/webhook", async (req, res) => {
   }
 });
 
-async function subscribeAll(){
-  for (const s of streamers){
+async function subscribeAll() {
+  for (const s of streamers) {
+    console.log("Subscribing:", s.name);
+
     const topic = `https://www.youtube.com/xml/feeds/videos.xml?channel_id=${s.channelId}`;
-    await axios.post("https://pubsubhubbub.appspot.com/subscribe", null, {
-      params: {
-        "hub.mode": "subscribe",
-        "hub.topic": topic,
-        "hub.callback": process.env.BASE_URL + "/webhook",
-        "hub.verify": "async"
-      }
-    }).catch(()=>{});
+
+    await axios
+      .post("https://pubsubhubbub.appspot.com/subscribe", null, {
+        params: {
+          "hub.mode": "subscribe",
+          "hub.topic": topic,
+          "hub.callback": process.env.BASE_URL + "/webhook",
+          "hub.verify": "async"
+        }
+      })
+      .catch(() => {});
   }
 }
 
-async function fallbackCheck(){
+async function fallbackCheck() {
   const channel = await client.channels.fetch(process.env.CHANNEL_ID);
 
-  for (let i=0;i<streamers.length;i++){
+  for (let i = 0; i < streamers.length; i++) {
     const s = streamers[i];
     const key = getKey(i);
 
-    try{
+    try {
       const res = await axios.get(
         `https://www.googleapis.com/youtube/v3/search?part=snippet&channelId=${s.channelId}&order=date&maxResults=1&type=video&key=${key}`
       );
@@ -102,44 +110,51 @@ async function fallbackCheck(){
       const vid = res.data.items[0]?.id.videoId;
       if (!vid) continue;
 
-      if (!lastVideo[s.channelId]){
+      if (!lastVideo[s.channelId]) {
         lastVideo[s.channelId] = vid;
-      } else if (lastVideo[s.channelId] !== vid){
+      } else if (lastVideo[s.channelId] !== vid) {
         lastVideo[s.channelId] = vid;
 
         await channel.send({
-          content: `♻️ Fallback: Video mới!`,
-          embeds: [{
-            title: res.data.items[0].snippet.title,
-            url: `https://youtube.com/watch?v=${vid}`
-          }]
+          content: `♻️ ${s.name} (fallback) có video mới!`,
+          embeds: [
+            {
+              title: res.data.items[0].snippet.title,
+              url: `https://youtube.com/watch?v=${vid}`
+            }
+          ]
         });
       }
-
-    }catch(e){}
+    } catch (e) {}
   }
 }
 
-client.on("clientReady", async ()=>{
-  loadStreamers();
+client.on("clientReady", async () => {
   console.log("HYBRID BOT RUNNING");
 
+  loadStreamers();
   await subscribeAll();
 
-  cron.schedule("0 */6 * * *", subscribeAll);
-  cron.schedule("*/30 * * * *", fallbackCheck);
+  // reload streamer mỗi 1 phút
   cron.schedule("*/1 * * * *", () => {
-  loadStreamers();
-});
+    loadStreamers();
+  });
+
+  // auto subscribe mỗi 2 phút
   cron.schedule("*/2 * * * *", async () => {
-  await subscribeAll(
-    console.log("Subscribing:", s.name);
-  );
-});
+    console.log("Auto re-subscribe...");
+    await subscribeAll();
+  });
+
+  // renew mỗi 6h
+  cron.schedule("0 */6 * * *", subscribeAll);
+
+  // fallback mỗi 30p
+  cron.schedule("*/30 * * * *", fallbackCheck);
 });
 
 client.login(process.env.DISCORD_TOKEN);
 
-app.listen(process.env.PORT, ()=>{
+app.listen(process.env.PORT, () => {
   console.log("Webhook server running");
 });
