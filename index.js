@@ -33,6 +33,11 @@ const client = new Client({
 
 let lastVideo = {};
 
+function getChannels() {
+  return process.env.CHANNEL_IDS.split(",");
+}
+
+// ===== WEBHOOK (VIDEO) =====
 app.get("/webhook", (req, res) => {
   res.send(req.query["hub.challenge"]);
 });
@@ -53,21 +58,25 @@ app.post("/webhook", async (req, res) => {
     const url = `https://youtube.com/watch?v=${videoId}`;
     const thumbnail = `https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg`;
 
-    const channel = await client.channels.fetch(process.env.CHANNEL_ID);
+    const channelIds = getChannels();
 
-    await channel.send({
-      content: `🎬 ${streamer.name} vừa ra video mới!`,
-      embeds: [
-        {
-          title: title,
-          url: url,
-          color: 3447003,
-          image: { url: thumbnail },
-          author: { name: streamer.name },
-          footer: { text: "NEW VIDEO" }
-        }
-      ]
-    });
+    for (const id of channelIds) {
+      const ch = await client.channels.fetch(id);
+
+      await ch.send({
+        content: `🎬 ${streamer.name} vừa ra video mới!`,
+        embeds: [
+          {
+            title: title,
+            url: url,
+            color: 3447003,
+            image: { url: thumbnail },
+            author: { name: streamer.name },
+            footer: { text: "NEW VIDEO" }
+          }
+        ]
+      });
+    }
 
     res.sendStatus(200);
   } catch (err) {
@@ -76,9 +85,9 @@ app.post("/webhook", async (req, res) => {
   }
 });
 
-// 🔴 LIVE gần realtime (30–60s)
+// ===== LIVE CHECK =====
 async function checkLiveFast() {
-  const channel = await client.channels.fetch(process.env.CHANNEL_ID);
+  const channelIds = getChannels();
 
   for (let i = 0; i < streamers.length; i++) {
     const s = streamers[i];
@@ -98,25 +107,30 @@ async function checkLiveFast() {
 
       lastVideo[s.channelId + "_live"] = videoId;
 
-      await channel.send({
-        content: `🔴 ${s.name} đang LIVE!`,
-        embeds: [
-          {
-            title: live.snippet.title,
-            url: `https://youtube.com/watch?v=${videoId}`,
-            color: 16711680,
-            image: {
-              url: live.snippet.thumbnails.high.url
-            },
-            footer: { text: "LIVE NOW" }
-          }
-        ]
-      });
+      for (const id of channelIds) {
+        const ch = await client.channels.fetch(id);
+
+        await ch.send({
+          content: `🔴 ${s.name} đang LIVE!`,
+          embeds: [
+            {
+              title: live.snippet.title,
+              url: `https://youtube.com/watch?v=${videoId}`,
+              color: 16711680,
+              image: {
+                url: live.snippet.thumbnails.high.url
+              },
+              footer: { text: "LIVE NOW" }
+            }
+          ]
+        });
+      }
 
     } catch (e) {}
   }
 }
 
+// ===== SUBSCRIBE =====
 async function subscribeAll() {
   for (const s of streamers) {
     console.log("Subscribing:", s.name);
@@ -134,6 +148,7 @@ async function subscribeAll() {
   }
 }
 
+// ===== START BOT =====
 client.on("clientReady", async () => {
   console.log("HYBRID BOT RUNNING");
 
@@ -149,7 +164,7 @@ client.on("clientReady", async () => {
     await subscribeAll();
   });
 
-  // 🔴 LIVE gần realtime (1 phút)
+  // LIVE gần realtime (~1 phút)
   cron.schedule("*/1 * * * *", checkLiveFast);
 });
 
