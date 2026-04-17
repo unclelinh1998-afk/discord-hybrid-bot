@@ -1,4 +1,17 @@
 require("dotenv").config();
+
+let streamers = [];
+
+function loadStreamers() {
+  try {
+    const data = JSON.parse(fs.readFileSync("./streamers.json"));
+    streamers = data;
+    console.log("Reloaded streamers:", streamers.length);
+  } catch (err) {
+    console.log("Load streamer error:", err.message);
+  }
+};
+
 const express = require("express");
 const axios = require("axios");
 const cron = require("node-cron");
@@ -6,7 +19,6 @@ const { Client, GatewayIntentBits } = require("discord.js");
 const fs = require("fs");
 const xml2js = require("xml2js");
 
-const streamers = JSON.parse(fs.readFileSync("./streamers.json"));
 
 const API_KEYS = (process.env.YOUTUBE_API_KEYS || "").split(",");
 function getKey(i){ return API_KEYS[i % API_KEYS.length]; }
@@ -109,12 +121,21 @@ async function fallbackCheck(){
 }
 
 client.on("clientReady", async ()=>{
+  loadStreamers();
   console.log("HYBRID BOT RUNNING");
 
   await subscribeAll();
 
   cron.schedule("0 */6 * * *", subscribeAll);
   cron.schedule("*/30 * * * *", fallbackCheck);
+  cron.schedule("*/1 * * * *", () => {
+  loadStreamers();
+});
+  cron.schedule("*/2 * * * *", async () => {
+  await subscribeAll(
+    console.log("Subscribing:", s.name);
+  );
+});
 });
 
 client.login(process.env.DISCORD_TOKEN);
