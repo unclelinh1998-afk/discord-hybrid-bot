@@ -76,26 +76,8 @@ app.post("/webhook", async (req, res) => {
   }
 });
 
-async function subscribeAll() {
-  for (const s of streamers) {
-    console.log("Subscribing:", s.name);
-
-    const topic = `https://www.youtube.com/xml/feeds/videos.xml?channel_id=${s.channelId}`;
-
-    await axios
-      .post("https://pubsubhubbub.appspot.com/subscribe", null, {
-        params: {
-          "hub.mode": "subscribe",
-          "hub.topic": topic,
-          "hub.callback": process.env.BASE_URL + "/webhook",
-          "hub.verify": "async"
-        }
-      })
-      .catch(() => {});
-  }
-}
-
-async function fallbackCheck() {
+// 🔴 LIVE gần realtime (30–60s)
+async function checkLiveFast() {
   const channel = await client.channels.fetch(process.env.CHANNEL_ID);
 
   for (let i = 0; i < streamers.length; i++) {
@@ -104,28 +86,51 @@ async function fallbackCheck() {
 
     try {
       const res = await axios.get(
-        `https://www.googleapis.com/youtube/v3/search?part=snippet&channelId=${s.channelId}&order=date&maxResults=1&type=video&key=${key}`
+        `https://www.googleapis.com/youtube/v3/search?part=snippet&channelId=${s.channelId}&eventType=live&type=video&maxResults=1&key=${key}`
       );
 
-      const vid = res.data.items[0]?.id.videoId;
-      if (!vid) continue;
+      const live = res.data.items[0];
+      if (!live) continue;
 
-      if (!lastVideo[s.channelId]) {
-        lastVideo[s.channelId] = vid;
-      } else if (lastVideo[s.channelId] !== vid) {
-        lastVideo[s.channelId] = vid;
+      const videoId = live.id.videoId;
 
-        await channel.send({
-          content: `♻️ ${s.name} (fallback) có video mới!`,
-          embeds: [
-            {
-              title: res.data.items[0].snippet.title,
-              url: `https://youtube.com/watch?v=${vid}`
-            }
-          ]
-        });
-      }
+      if (lastVideo[s.channelId + "_live"] === videoId) continue;
+
+      lastVideo[s.channelId + "_live"] = videoId;
+
+      await channel.send({
+        content: `🔴 ${s.name} đang LIVE!`,
+        embeds: [
+          {
+            title: live.snippet.title,
+            url: `https://youtube.com/watch?v=${videoId}`,
+            color: 16711680,
+            image: {
+              url: live.snippet.thumbnails.high.url
+            },
+            footer: { text: "LIVE NOW" }
+          }
+        ]
+      });
+
     } catch (e) {}
+  }
+}
+
+async function subscribeAll() {
+  for (const s of streamers) {
+    console.log("Subscribing:", s.name);
+
+    const topic = `https://www.youtube.com/xml/feeds/videos.xml?channel_id=${s.channelId}`;
+
+    await axios.post("https://pubsubhubbub.appspot.com/subscribe", null, {
+      params: {
+        "hub.mode": "subscribe",
+        "hub.topic": topic,
+        "hub.callback": process.env.BASE_URL + "/webhook",
+        "hub.verify": "async"
+      }
+    }).catch(() => {});
   }
 }
 
@@ -135,22 +140,17 @@ client.on("clientReady", async () => {
   loadStreamers();
   await subscribeAll();
 
-  // reload streamer mỗi 1 phút
-  cron.schedule("*/1 * * * *", () => {
-    loadStreamers();
-  });
+  // reload streamer
+  cron.schedule("*/1 * * * *", loadStreamers);
 
-  // auto subscribe mỗi 2 phút
+  // auto subscribe
   cron.schedule("*/2 * * * *", async () => {
     console.log("Auto re-subscribe...");
     await subscribeAll();
   });
 
-  // renew mỗi 6h
-  cron.schedule("0 */6 * * *", subscribeAll);
-
-  // fallback mỗi 30p
-  cron.schedule("*/30 * * * *", fallbackCheck);
+  // 🔴 LIVE gần realtime (1 phút)
+  cron.schedule("*/1 * * * *", checkLiveFast);
 });
 
 client.login(process.env.DISCORD_TOKEN);
