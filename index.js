@@ -37,7 +37,7 @@ function getChannels() {
   return process.env.CHANNEL_IDS.split(",");
 }
 
-// ===== WEBHOOK (VIDEO) =====
+// ===== WEBHOOK =====
 app.get("/webhook", (req, res) => {
   res.send(req.query["hub.challenge"]);
 });
@@ -58,24 +58,67 @@ app.post("/webhook", async (req, res) => {
     const url = `https://youtube.com/watch?v=${videoId}`;
     const thumbnail = `https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg`;
 
+    // 🔥 CHECK LIVE
+    let isLive = false;
+
+    try {
+      const key = getKey(0);
+
+      const check = await axios.get(
+        `https://www.googleapis.com/youtube/v3/videos?part=snippet,liveStreamingDetails&id=${videoId}&key=${key}`
+      );
+
+      const v = check.data.items[0];
+
+      if (v?.liveStreamingDetails?.actualStartTime) {
+        isLive = true;
+      }
+    } catch (e) {}
+
     const channelIds = getChannels();
 
     for (const id of channelIds) {
       const ch = await client.channels.fetch(id);
 
-      await ch.send({
-        content: `🎬 ${streamer.name} vừa ra video mới!`,
-        embeds: [
-          {
-            title: title,
-            url: url,
-            color: 3447003,
-            image: { url: thumbnail },
-            author: { name: streamer.name },
-            footer: { text: "NEW VIDEO" }
-          }
-        ]
-      });
+      // 🔴 LIVE
+      if (isLive) {
+        if (lastVideo[channelId + "_live"] === videoId) continue;
+        lastVideo[channelId + "_live"] = videoId;
+
+        await ch.send({
+          content: `🔴 ${streamer.name} đang LIVE!`,
+          embeds: [
+            {
+              title,
+              url,
+              color: 16711680,
+              image: { url: thumbnail },
+              author: { name: streamer.name },
+              footer: { text: "LIVE NOW" }
+            }
+          ]
+        });
+      }
+
+      // 🎬 VIDEO
+      else {
+        if (lastVideo[channelId] === videoId) continue;
+        lastVideo[channelId] = videoId;
+
+        await ch.send({
+          content: `🎬 ${streamer.name} vừa ra video mới!`,
+          embeds: [
+            {
+              title,
+              url,
+              color: 3447003,
+              image: { url: thumbnail },
+              author: { name: streamer.name },
+              footer: { text: "NEW VIDEO" }
+            }
+          ]
+        });
+      }
     }
 
     res.sendStatus(200);
@@ -148,23 +191,20 @@ async function subscribeAll() {
   }
 }
 
-// ===== START BOT =====
+// ===== START =====
 client.on("clientReady", async () => {
   console.log("HYBRID BOT RUNNING");
 
   loadStreamers();
   await subscribeAll();
 
-  // reload streamer
   cron.schedule("*/1 * * * *", loadStreamers);
 
-  // auto subscribe
   cron.schedule("*/2 * * * *", async () => {
     console.log("Auto re-subscribe...");
     await subscribeAll();
   });
 
-  // LIVE gần realtime (~1 phút)
   cron.schedule("*/1 * * * *", checkLiveFast);
 });
 
