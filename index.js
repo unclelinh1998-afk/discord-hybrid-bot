@@ -58,8 +58,8 @@ app.post("/webhook", async (req, res) => {
     const url = `https://youtube.com/watch?v=${videoId}`;
     const thumbnail = `https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg`;
 
-    // 🔥 CHECK LIVE
-    let isLive = false;
+    // 🔥 CHECK STATUS (LIVE / UPCOMING / VIDEO)
+    let status = "video";
 
     try {
       const key = getKey(0);
@@ -69,10 +69,16 @@ app.post("/webhook", async (req, res) => {
       );
 
       const v = check.data.items[0];
+      const liveStatus = v?.snippet?.liveBroadcastContent;
 
-      if (v?.liveStreamingDetails?.actualStartTime) {
-        isLive = true;
+      if (liveStatus === "upcoming") {
+        return res.sendStatus(200); // ❌ bỏ qua setup live
       }
+
+      if (liveStatus === "live") {
+        status = "live";
+      }
+
     } catch (e) {}
 
     const channelIds = getChannels();
@@ -81,7 +87,7 @@ app.post("/webhook", async (req, res) => {
       const ch = await client.channels.fetch(id);
 
       // 🔴 LIVE
-      if (isLive) {
+      if (status === "live") {
         if (lastVideo[channelId + "_live"] === videoId) continue;
         lastVideo[channelId + "_live"] = videoId;
 
