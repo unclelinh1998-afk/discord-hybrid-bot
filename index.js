@@ -32,6 +32,7 @@ const client = new Client({
 });
 
 let lastVideo = {};
+const sent = new Set();
 
 function getChannels() {
   return process.env.CHANNEL_IDS.split(",");
@@ -58,7 +59,6 @@ app.post("/webhook", async (req, res) => {
     const url = `https://youtube.com/watch?v=${videoId}`;
     const thumbnail = `https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg`;
 
-    // 🔥 CHECK STATUS
     let liveStatus = "none";
 
     try {
@@ -75,13 +75,15 @@ app.post("/webhook", async (req, res) => {
 
     const channelIds = getChannels();
 
-    for (const id of channelIds) {
-      const ch = await client.channels.fetch(id);
+    // 🔴 LIVE
+    if (liveStatus === "live") {
+      if (sent.has(videoId)) return res.sendStatus(200);
+      sent.add(videoId);
 
-      // 🔴 LIVE
-      if (liveStatus === "live") {
-        if (lastVideo[channelId + "_live"] === videoId) continue;
-        lastVideo[channelId + "_live"] = videoId;
+      lastVideo[channelId + "_live"] = videoId;
+
+      for (const id of channelIds) {
+        const ch = await client.channels.fetch(id);
 
         await ch.send({
           content: `🔴 ${streamer.name} đang LIVE!`,
@@ -97,11 +99,17 @@ app.post("/webhook", async (req, res) => {
           ]
         });
       }
+    }
 
-      // 🎬 VIDEO (KHÔNG phải upcoming)
-      else if (liveStatus === "none") {
-        if (lastVideo[channelId] === videoId) continue;
-        lastVideo[channelId] = videoId;
+    // 🎬 VIDEO
+    else if (liveStatus === "none") {
+      if (sent.has(videoId)) return res.sendStatus(200);
+      sent.add(videoId);
+
+      lastVideo[channelId] = videoId;
+
+      for (const id of channelIds) {
+        const ch = await client.channels.fetch(id);
 
         await ch.send({
           content: `🎬 ${streamer.name} vừa ra video mới!`,
@@ -117,9 +125,9 @@ app.post("/webhook", async (req, res) => {
           ]
         });
       }
-
-      // ❌ upcoming → bỏ qua luôn (KHÔNG return)
     }
+
+    // ❌ upcoming → bỏ qua
 
     res.sendStatus(200);
   } catch (err) {
@@ -128,7 +136,7 @@ app.post("/webhook", async (req, res) => {
   }
 });
 
-// ===== LIVE CHECK (backup realtime) =====
+// ===== LIVE CHECK (backup) =====
 async function checkLiveFast() {
   const channelIds = getChannels();
 
@@ -146,7 +154,8 @@ async function checkLiveFast() {
 
       const videoId = live.id.videoId;
 
-      if (lastVideo[s.channelId + "_live"] === videoId) continue;
+      if (sent.has(videoId)) continue;
+      sent.add(videoId);
 
       lastVideo[s.channelId + "_live"] = videoId;
 
@@ -205,9 +214,14 @@ client.on("clientReady", async () => {
     await subscribeAll();
   });
 
-  // backup live check
   cron.schedule("*/1 * * * *", checkLiveFast);
 });
+
+// reset chống spam mỗi 6h
+setInterval(() => {
+  sent.clear();
+  console.log("Reset sent cache");
+}, 1000 * 60 * 60 * 6);
 
 client.login(process.env.DISCORD_TOKEN);
 
