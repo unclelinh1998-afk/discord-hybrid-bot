@@ -58,8 +58,8 @@ app.post("/webhook", async (req, res) => {
     const url = `https://youtube.com/watch?v=${videoId}`;
     const thumbnail = `https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg`;
 
-    // 🔥 CHECK STATUS (LIVE / UPCOMING / VIDEO)
-    let status = "video";
+    // 🔥 CHECK STATUS
+    let liveStatus = "none";
 
     try {
       const key = getKey(0);
@@ -69,15 +69,7 @@ app.post("/webhook", async (req, res) => {
       );
 
       const v = check.data.items[0];
-      const liveStatus = v?.snippet?.liveBroadcastContent;
-
-      if (liveStatus === "upcoming") {
-        return res.sendStatus(200); // ❌ bỏ qua setup live
-      }
-
-      if (liveStatus === "live") {
-        status = "live";
-      }
+      liveStatus = v?.snippet?.liveBroadcastContent || "none";
 
     } catch (e) {}
 
@@ -87,7 +79,7 @@ app.post("/webhook", async (req, res) => {
       const ch = await client.channels.fetch(id);
 
       // 🔴 LIVE
-      if (status === "live") {
+      if (liveStatus === "live") {
         if (lastVideo[channelId + "_live"] === videoId) continue;
         lastVideo[channelId + "_live"] = videoId;
 
@@ -106,8 +98,8 @@ app.post("/webhook", async (req, res) => {
         });
       }
 
-      // 🎬 VIDEO
-      else {
+      // 🎬 VIDEO (KHÔNG phải upcoming)
+      else if (liveStatus === "none") {
         if (lastVideo[channelId] === videoId) continue;
         lastVideo[channelId] = videoId;
 
@@ -125,6 +117,8 @@ app.post("/webhook", async (req, res) => {
           ]
         });
       }
+
+      // ❌ upcoming → bỏ qua luôn (KHÔNG return)
     }
 
     res.sendStatus(200);
@@ -134,7 +128,7 @@ app.post("/webhook", async (req, res) => {
   }
 });
 
-// ===== LIVE CHECK =====
+// ===== LIVE CHECK (backup realtime) =====
 async function checkLiveFast() {
   const channelIds = getChannels();
 
@@ -211,6 +205,7 @@ client.on("clientReady", async () => {
     await subscribeAll();
   });
 
+  // backup live check
   cron.schedule("*/1 * * * *", checkLiveFast);
 });
 
