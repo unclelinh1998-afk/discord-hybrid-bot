@@ -59,73 +59,74 @@ app.post("/webhook", async (req, res) => {
     const url = `https://youtube.com/watch?v=${videoId}`;
     const thumbnail = `https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg`;
 
-    let liveStatus = "none";
+    let isLive = false;
+    let v = null;
 
-    try {
-      const key = getKey(0);
+try {
+  const key = getKey(0);
 
-      const check = await axios.get(
-        `https://www.googleapis.com/youtube/v3/videos?part=snippet,liveStreamingDetails&id=${videoId}&key=${key}`
-      );
+  const check = await axios.get(
+    `https://www.googleapis.com/youtube/v3/videos?part=snippet,liveStreamingDetails&id=${videoId}&key=${key}`
+  );
 
-      const v = check.data.items[0];
-      liveStatus = v?.snippet?.liveBroadcastContent || "none";
+  v = check.data.items[0];
 
-    } catch (e) {}
+  if (v?.liveStreamingDetails?.actualStartTime) {
+    isLive = true;
+  }
+
+} catch (e) {}
 
     const channelIds = getChannels();
 
     // 🔴 LIVE
-    if (liveStatus === "live") {
-      if (sent.has(videoId)) return res.sendStatus(200);
-      sent.add(videoId);
+    if (isLive) {
+  if (sent.has(videoId)) return res.sendStatus(200);
+  sent.add(videoId);
 
-      lastVideo[channelId + "_live"] = videoId;
+  for (const id of channelIds) {
+    const ch = await client.channels.fetch(id);
 
-      for (const id of channelIds) {
-        const ch = await client.channels.fetch(id);
-
-        await ch.send({
-          content: `🔴 ${streamer.name} đang LIVE!`,
-          embeds: [
-            {
-              title,
-              url,
-              color: 16711680,
-              image: { url: thumbnail },
-              author: { name: streamer.name },
-              footer: { text: "LIVE NOW" }
-            }
-          ]
-        });
-      }
-    }
+    await ch.send({
+      content: `🔴 ${streamer.name} đang LIVE!`,
+      embeds: [{
+        title,
+        url,
+        color: 16711680,
+        image: { url: thumbnail },
+        author: { name: streamer.name },
+        footer: { text: "LIVE NOW" }
+      }]
+    });
+  }
+}
 
     // 🎬 VIDEO
-    else if (liveStatus === "none") {
-      if (sent.has(videoId)) return res.sendStatus(200);
-      sent.add(videoId);
+    else {
+  // ❗ CHẶN upcoming
+  if (v && v.snippet?.liveBroadcastContent === "upcoming") {
+    return res.sendStatus(200);
+  }
 
-      lastVideo[channelId] = videoId;
+  if (sent.has(videoId)) return res.sendStatus(200);
+  sent.add(videoId);
 
-      for (const id of channelIds) {
-        const ch = await client.channels.fetch(id);
+  for (const id of channelIds) {
+    const ch = await client.channels.fetch(id);
 
-        await ch.send({
-          content: `🎬 ${streamer.name} vừa ra video mới!`,
-          embeds: [
-            {
-              title,
-              url,
-              color: 3447003,
-              image: { url: thumbnail },
-              author: { name: streamer.name },
-              footer: { text: "NEW VIDEO" }
-            }
-          ]
-        });
-      }
-    }
+    await ch.send({
+      content: `🎬 ${streamer.name} vừa ra video mới!`,
+      embeds: [{
+        title,
+        url,
+        color: 3447003,
+        image: { url: thumbnail },
+        author: { name: streamer.name },
+        footer: { text: "NEW VIDEO" }
+      }]
+    });
+  }
+}
 
     // ❌ upcoming → bỏ qua
 
