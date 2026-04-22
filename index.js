@@ -32,7 +32,8 @@ const client = new Client({
 });
 
 let lastVideo = {};
-const sent = new Set();
+const sentVideo = new Set();
+const sentLive = new Set();
 
 function getChannels() {
   return process.env.CHANNEL_IDS.split(",");
@@ -81,8 +82,8 @@ try {
 
     // 🔴 LIVE
     if (isLive) {
-  if (sent.has(videoId)) return res.sendStatus(200);
-  sent.add(videoId);
+  if (sentLive.has(videoId)) return res.sendStatus(200);
+  sentLive.add(videoId);
 
   for (const id of channelIds) {
     const ch = await client.channels.fetch(id);
@@ -103,13 +104,12 @@ try {
 
     // 🎬 VIDEO
     else {
-  // ❗ CHẶN upcoming
   if (v && v.snippet?.liveBroadcastContent === "upcoming") {
     return res.sendStatus(200);
   }
 
-  if (sent.has(videoId)) return res.sendStatus(200);
-  sent.add(videoId);
+  if (sentVideo.has(videoId)) return res.sendStatus(200);
+  sentVideo.add(videoId);
 
   for (const id of channelIds) {
     const ch = await client.channels.fetch(id);
@@ -155,8 +155,8 @@ async function checkLiveFast() {
 
       const videoId = live.id.videoId;
 
-      if (sent.has(videoId)) continue;
-      sent.add(videoId);
+      if (sentLive.has(videoId)) continue;
+      sentLive.add(videoId);
 
       lastVideo[s.channelId + "_live"] = videoId;
 
@@ -220,8 +220,9 @@ client.on("clientReady", async () => {
 
 // reset chống spam mỗi 6h
 setInterval(() => {
-  sent.clear();
-  console.log("Reset sent cache");
+  sentVideo.clear();
+  sentLive.clear();
+  console.log("Reset cache");
 }, 1000 * 60 * 60 * 6);
 
 client.login(process.env.DISCORD_TOKEN);
