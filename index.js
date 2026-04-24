@@ -31,8 +31,6 @@ const client = new Client({
   intents: [GatewayIntentBits.Guilds]
 });
 
-let lastVideo = {};
-const sentVideo = new Set();
 const sentLive = new Set();
 
 function getChannels() {
@@ -61,74 +59,47 @@ app.post("/webhook", async (req, res) => {
     const thumbnail = `https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg`;
 
     let isLive = false;
-    let v = null;
 
-try {
-  const key = getKey(0);
+    try {
+      const key = getKey(0);
 
-  const check = await axios.get(
-    `https://www.googleapis.com/youtube/v3/videos?part=snippet,liveStreamingDetails&id=${videoId}&key=${key}`
-  );
+      const check = await axios.get(
+        `https://www.googleapis.com/youtube/v3/videos?part=liveStreamingDetails&id=${videoId}&key=${key}`
+      );
 
-  v = check.data.items[0];
+      const v = check.data.items[0];
 
-  if (v?.liveStreamingDetails?.actualStartTime) {
-    isLive = true;
-  }
+      if (v?.liveStreamingDetails?.actualStartTime) {
+        isLive = true;
+      }
 
-} catch (e) {}
+    } catch (e) {}
 
-    const channelIds = getChannels();
-
-    // 🔴 LIVE
+    // 🔴 CHỈ gửi LIVE
     if (isLive) {
-  if (sentLive.has(videoId)) return res.sendStatus(200);
-  sentLive.add(videoId);
+      if (sentLive.has(videoId)) return res.sendStatus(200);
+      sentLive.add(videoId);
 
-  for (const id of channelIds) {
-    const ch = await client.channels.fetch(id);
+      const channelIds = getChannels();
 
-    await ch.send({
-      content: `🔴 ${streamer.name} đang LIVE!`,
-      embeds: [{
-        title,
-        url,
-        color: 16711680,
-        image: { url: thumbnail },
-        author: { name: streamer.name },
-        footer: { text: "LIVE NOW" }
-      }]
-    });
-  }
-}
+      for (const id of channelIds) {
+        const ch = await client.channels.fetch(id);
 
-    // 🎬 VIDEO
-    else {
-  if (v && v.snippet?.liveBroadcastContent === "upcoming") {
-    return res.sendStatus(200);
-  }
-
-  if (sentVideo.has(videoId)) return res.sendStatus(200);
-  sentVideo.add(videoId);
-
-  for (const id of channelIds) {
-    const ch = await client.channels.fetch(id);
-
-    await ch.send({
-      content: `🎬 ${streamer.name} vừa ra video mới!`,
-      embeds: [{
-        title,
-        url,
-        color: 3447003,
-        image: { url: thumbnail },
-        author: { name: streamer.name },
-        footer: { text: "NEW VIDEO" }
-      }]
-    });
-  }
-}
-
-    // ❌ upcoming → bỏ qua
+        await ch.send({
+          content: `🔴 ${streamer.name} đang LIVE!`,
+          embeds: [
+            {
+              title,
+              url,
+              color: 16711680,
+              image: { url: thumbnail },
+              author: { name: streamer.name },
+              footer: { text: "LIVE NOW" }
+            }
+          ]
+        });
+      }
+    }
 
     res.sendStatus(200);
   } catch (err) {
@@ -158,8 +129,6 @@ async function checkLiveFast() {
       if (sentLive.has(videoId)) continue;
       sentLive.add(videoId);
 
-      lastVideo[s.channelId + "_live"] = videoId;
-
       for (const id of channelIds) {
         const ch = await client.channels.fetch(id);
 
@@ -186,8 +155,6 @@ async function checkLiveFast() {
 // ===== SUBSCRIBE =====
 async function subscribeAll() {
   for (const s of streamers) {
-    console.log("Subscribing:", s.name);
-
     const topic = `https://www.youtube.com/xml/feeds/videos.xml?channel_id=${s.channelId}`;
 
     await axios.post("https://pubsubhubbub.appspot.com/subscribe", null, {
@@ -203,26 +170,21 @@ async function subscribeAll() {
 
 // ===== START =====
 client.on("clientReady", async () => {
-  console.log("HYBRID BOT RUNNING");
+  console.log("LIVE ONLY BOT RUNNING");
 
   loadStreamers();
   await subscribeAll();
 
   cron.schedule("*/1 * * * *", loadStreamers);
 
-  cron.schedule("*/2 * * * *", async () => {
-    console.log("Auto re-subscribe...");
-    await subscribeAll();
-  });
+  cron.schedule("*/2 * * * *", subscribeAll);
 
   cron.schedule("*/1 * * * *", checkLiveFast);
 });
 
-// reset chống spam mỗi 6h
+// reset cache
 setInterval(() => {
-  sentVideo.clear();
   sentLive.clear();
-  console.log("Reset cache");
 }, 1000 * 60 * 60 * 6);
 
 client.login(process.env.DISCORD_TOKEN);
