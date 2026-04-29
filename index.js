@@ -85,18 +85,34 @@ app.post("/webhook", async (req, res) => {
       for (const id of channelIds) {
         const ch = await client.channels.fetch(id);
 
+        const embed = {
+          color: 0xFF0000,
+
+          author: {
+            name: `[ ${streamer.name.toUpperCase()} ĐANG LIVESTREAM ]`
+          },
+
+          title: title,
+          url: url,
+
+          description:
+            `${streamer.name} đang live stream tại:\n${url}\n\n` +
+            `👉 Tới ngay để xem trước khi lỡ mất!`,
+
+          image: {
+            url: thumbnail
+          },
+
+          footer: {
+            text: "🔴 LIVE NOW"
+          },
+
+          timestamp: new Date()
+        };
+
         await ch.send({
           content: `🔴 ${streamer.name} đang LIVE!`,
-          embeds: [
-            {
-              title,
-              url,
-              color: 16711680,
-              image: { url: thumbnail },
-              author: { name: streamer.name },
-              footer: { text: "LIVE NOW" }
-            }
-          ]
+          embeds: [embed]
         });
       }
     }
@@ -132,19 +148,34 @@ async function checkLiveFast() {
       for (const id of channelIds) {
         const ch = await client.channels.fetch(id);
 
+        const embed = {
+          color: 0xFF0000,
+
+          author: {
+            name: `[ ${s.name.toUpperCase()} ĐANG LIVESTREAM ]`
+          },
+
+          title: live.snippet.title,
+          url: `https://youtube.com/watch?v=${videoId}`,
+
+          description:
+            `${s.name} đang live stream tại:\nhttps://youtube.com/watch?v=${videoId}\n\n` +
+            `👉 Tới ngay để xem trước khi lỡ mất!`,
+
+          image: {
+            url: `https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg`
+          },
+
+          footer: {
+            text: "🔴 LIVE NOW"
+          },
+
+          timestamp: new Date()
+        };
+
         await ch.send({
           content: `🔴 ${s.name} đang LIVE!`,
-          embeds: [
-            {
-              title: live.snippet.title,
-              url: `https://youtube.com/watch?v=${videoId}`,
-              color: 16711680,
-              image: {
-                url: live.snippet.thumbnails.high.url
-              },
-              footer: { text: "LIVE NOW" }
-            }
-          ]
+          embeds: [embed]
         });
       }
 
@@ -176,9 +207,7 @@ client.on("clientReady", async () => {
   await subscribeAll();
 
   cron.schedule("*/1 * * * *", loadStreamers);
-
   cron.schedule("*/2 * * * *", subscribeAll);
-
   cron.schedule("*/1 * * * *", checkLiveFast);
 });
 
