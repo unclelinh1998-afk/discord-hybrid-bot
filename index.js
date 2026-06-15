@@ -134,7 +134,7 @@ async function checkLiveFast() {
 
     try {
       const res = await axios.get(
-        `https://www.googleapis.com/youtube/v3/search?part=snippet&channelId=${s.channelId}&eventType=live&type=video&maxResults=1&key=${key}`
+        `https://www.googleapis.com/youtube/v3/search?part=id,snippet&channelId=${s.channelId}&eventType=live&type=video&maxResults=1&key=${key}`
       );
 
       const live = res.data.items[0];
@@ -142,44 +142,56 @@ async function checkLiveFast() {
 
       const videoId = live.id.videoId;
 
+      // đã gửi rồi thì bỏ qua
       if (sentLive.has(videoId)) continue;
+
+      // kiểm tra stream còn đang live thật không
+      const detail = await axios.get(
+        `https://www.googleapis.com/youtube/v3/videos?part=liveStreamingDetails&id=${videoId}&key=${key}`
+      );
+
+      const item = detail.data.items[0];
+
+      if (
+        !item ||
+        !item.liveStreamingDetails ||
+        !item.liveStreamingDetails.actualStartTime ||
+        item.liveStreamingDetails.actualEndTime
+      ) {
+        continue;
+      }
+
       sentLive.add(videoId);
+
+      const embed = {
+        color: 0xff0000,
+        author: {
+          name: `[ ${s.name.toUpperCase()} ĐANG LIVESTREAM ]`
+        },
+        title: live.snippet.title,
+        url: `https://youtube.com/watch?v=${videoId}`,
+        description:
+          `${s.name} đang live stream tại:\nhttps://youtube.com/watch?v=${videoId}\n\n👉 Tới ngay để xem trước khi lỡ mất!`,
+        image: {
+          url: `https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg`
+        },
+        footer: {
+          text: "🔴 LIVE NOW"
+        },
+        timestamp: new Date()
+      };
 
       for (const id of channelIds) {
         const ch = await client.channels.fetch(id);
-
-        const embed = {
-          color: 0xFF0000,
-
-          author: {
-            name: `[ ${s.name.toUpperCase()} ĐANG LIVESTREAM ]`
-          },
-
-          title: live.snippet.title,
-          url: `https://youtube.com/watch?v=${videoId}`,
-
-          description:
-            `${s.name} đang live stream tại:\nhttps://youtube.com/watch?v=${videoId}\n\n` +
-            `👉 Tới ngay để xem trước khi lỡ mất!`,
-
-          image: {
-            url: `https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg`
-          },
-
-          footer: {
-            text: "🔴 LIVE NOW"
-          },
-
-          timestamp: new Date()
-        };
 
         await ch.send({
           content: `🔴 ${s.name} đang LIVE!`,
           embeds: [embed]
         });
       }
-
-    } catch (e) {}
+    } catch (e) {
+      console.log("Live check error:", e.message);
+    }
   }
 }
 
@@ -210,11 +222,6 @@ client.on("clientReady", async () => {
   cron.schedule("*/2 * * * *", subscribeAll);
   cron.schedule("*/1 * * * *", checkLiveFast);
 });
-
-// reset cache
-setInterval(() => {
-  sentLive.clear();
-}, 1000 * 60 * 60 * 6);
 
 client.login(process.env.DISCORD_TOKEN);
 
